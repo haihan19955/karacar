@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#07070c">
+<meta name="robots" content="noindex">
+<title>KaraCar · 点歌</title>
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/app.css">
+<style>
+  body { overflow: auto; user-select: auto; font-size: 16px; }
+  .g-wrap { max-width: 640px; margin: 0 auto; padding: 16px 16px 60px; }
+  .g-head { display: flex; align-items: center; gap: 12px; margin: 4px 0 16px; }
+  .g-head .brand-mark { width: 40px; height: 40px; }
+  .g-head h1 { font-size: 24px; font-weight: 900; margin: 0; letter-spacing: -0.02em; }
+  .g-head p { margin: 0; font-size: 14px; color: var(--text-dim); }
+  .g-now { display: flex; gap: 12px; align-items: center; padding: 12px; border-radius: 18px; background: linear-gradient(120deg, rgba(255,77,141,.16), rgba(139,92,246,.16)); border: 1px solid var(--line); margin-bottom: 14px; }
+  .g-now img { width: 96px; aspect-ratio: 16/9; border-radius: 10px; object-fit: cover; }
+  .g-label { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; color: var(--pink); }
+  .g-now .t { font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .g-name { margin-bottom: 10px; }
+  .g-name .field { height: 50px; font-size: 16px; }
+  .searchbar { margin: 0 0 16px; padding: 6px 6px 6px 16px; border-radius: 18px; }
+  .searchbar input { height: 50px; font-size: 17px; }
+  .searchbar .btn-lg { height: 50px; padding: 0 18px; font-size: 16px; border-radius: 14px; }
+  .g-res { display: flex; flex-direction: column; gap: 8px; }
+  .g-item { display: grid; grid-template-columns: 112px 1fr; gap: 12px; padding: 8px; border-radius: 16px; background: var(--surface); align-items: center; }
+  .g-item img { width: 112px; aspect-ratio: 16/9; object-fit: cover; border-radius: 10px; }
+  .g-item .t { font-weight: 700; font-size: 15px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .g-item .s { font-size: 13px; color: var(--text-dim); margin-top: 2px; }
+  .g-item .acts { grid-column: 1 / -1; display: flex; gap: 8px; }
+  .g-item .acts .btn { flex: 1; height: 46px; font-size: 15px; }
+  .g-item .acts .btn.done { background: rgba(52,211,153,.18); color: var(--green); box-shadow: none; }
+  .g-queue h3 { margin: 22px 0 10px; font-size: 18px; }
+  .g-q { display: flex; gap: 10px; align-items: center; padding: 6px 0; font-size: 14px; }
+  .g-q .n { width: 22px; color: var(--text-faint); font-weight: 800; text-align: center; }
+  .g-q .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+  .g-expired { text-align: center; padding: 60px 20px; }
+  .g-expired .big-ic { margin-bottom: 16px; }
+  #toast { top: 20px; font-size: 16px; }
+</style>
+</head>
+<body>
+<div class="bg-glow" aria-hidden="true"></div>
+<div class="g-wrap">
+  <div class="g-head">
+    <span class="brand-mark"></span>
+    <div><h1 data-i18n="g_title"></h1><p data-i18n="g_sub"></p></div>
+  </div>
+  <div id="g-main">
+    <div id="g-now"></div>
+    <div class="g-name"><input class="field" id="g-name" maxlength="24" data-i18n-ph="g_name_ph"></div>
+    <form class="searchbar" id="g-form" autocomplete="off">
+      <input id="g-q" type="search" enterkeyhint="search" data-i18n-ph="search_placeholder">
+      <button class="btn btn-primary btn-lg" type="submit" data-i18n="search_btn"></button>
+    </form>
+    <div class="g-res" id="g-res"></div>
+    <div class="g-queue" id="g-queue"></div>
+  </div>
+</div>
+<script src="/i18n.js"></script>
+<script src="/common.js"></script>
+<script src="/guest.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "karacar",
+  "version": "1.0.0",
+  "description": "Karaoke for the Tesla browser: YouTube search, word-level synced lyrics, playlists and passenger QR song requests.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "AGPL-3.0-only"
+}

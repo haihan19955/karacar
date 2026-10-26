@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: karacar
+    runtime: node
+    plan: free
+    buildCommand: "true"
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: YT_API_KEY
+        sync: false

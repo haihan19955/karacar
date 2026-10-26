@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#07070c">
+<title>KaraCar · 车载K歌</title>
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body class="lyr-m">
+<div class="bg-glow" aria-hidden="true"></div>
+
+<header class="topbar">
+  <a class="brand" href="#" data-go="search" aria-label="KaraCar">
+    <span class="brand-mark"></span>
+    <span class="brand-name">KaraCar</span>
+  </a>
+  <nav class="tabs" role="tablist">
+    <button class="tab" data-go="search"></button>
+    <button class="tab" data-go="library"></button>
+    <button class="tab" data-go="hot"></button>
+    <button class="tab" data-go="guests"></button>
+    <button class="tab tab-player" data-go="player"></button>
+  </nav>
+  <div class="top-actions">
+    <div class="guest-pill" id="guest-pill" hidden></div>
+    <button class="icon-btn" id="settings-btn" aria-label="Settings"></button>
+  </div>
+</header>
+
+<main>
+  <!-- Search -->
+  <section class="view" id="view-search">
+    <form class="searchbar" id="search-form" autocomplete="off">
+      <span class="searchbar-ic"></span>
+      <input id="search-input" type="search" enterkeyhint="search" data-i18n-ph="search_placeholder">
+      <button type="submit" class="btn btn-primary btn-lg" data-i18n="search_btn"></button>
+    </form>
+    <div id="search-results" class="results"></div>
+  </section>
+
+  <!-- Library -->
+  <section class="view" id="view-library">
+    <aside class="pl-side">
+      <div class="pl-side-head">
+        <h2 data-i18n="library_title"></h2>
+        <button class="icon-btn" id="pl-new" aria-label="New playlist"></button>
+      </div>
+      <div id="pl-list" class="pl-list"></div>
+    </aside>
+    <div class="pl-main" id="pl-main"></div>
+  </section>
+
+  <!-- Hot -->
+  <section class="view" id="view-hot">
+    <div class="section-head">
+      <h2 data-i18n="hot_title"></h2>
+      <p class="muted" data-i18n="hot_hint"></p>
+    </div>
+    <div class="chips" id="hot-cats"></div>
+    <div class="hot-grid" id="hot-grid"></div>
+  </section>
+
+  <!-- Passengers -->
+  <section class="view" id="view-guests">
+    <div class="guests-wrap">
+      <div class="qr-card">
+        <div class="qr-box" id="qr-box"></div>
+        <div class="qr-meta">
+          <div class="qr-timer"><span data-i18n="guests_expires"></span> <b id="qr-countdown">--:--</b></div>
+          <button class="btn btn-ghost" id="qr-refresh"></button>
+        </div>
+      </div>
+      <div class="guests-info">
+        <h2 data-i18n="guests_title"></h2>
+        <p class="muted big" data-i18n="guests_sub"></p>
+        <ol class="steps">
+          <li><span class="step-n">1</span><span data-i18n="guests_step1"></span></li>
+          <li><span class="step-n">2</span><span data-i18n="guests_step2"></span></li>
+          <li><span class="step-n">3</span><span data-i18n="guests_step3"></span></li>
+        </ol>
+        <h3 data-i18n="guests_log"></h3>
+        <div id="guest-log" class="guest-log"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Player -->
+  <section class="view" id="view-player">
+    <div class="stage-col">
+      <div class="stage" id="stage" data-mode="video">
+        <div class="stage-backdrop" id="stage-backdrop"></div>
+        <div class="yt-wrap"><div id="yt"></div></div>
+        <div class="lyrics" id="lyrics">
+          <div class="lyr-status" id="lyr-status"></div>
+          <div class="lyr-countdown" id="lyr-countdown"><i></i><i></i><i></i></div>
+          <div class="lyr-scroll" id="lyr-scroll"></div>
+        </div>
+        <div class="empty-stage" id="empty-stage">
+          <div class="empty-mic"></div>
+          <h2 data-i18n="nothing_playing"></h2>
+          <p class="muted" data-i18n="nothing_playing_hint"></p>
+        </div>
+        <button class="exit-karaoke" id="exit-karaoke" aria-label="Exit"></button>
+      </div>
+      <div class="controls" id="controls">
+        <div class="seek">
+          <span id="t-cur">0:00</span>
+          <input type="range" id="seek" min="0" max="100" step="0.1" value="0" aria-label="Seek">
+          <span id="t-dur">0:00</span>
+        </div>
+        <div class="ctrl-row">
+          <div class="np" id="np">
+            <img id="np-thumb" alt="">
+            <div class="np-text"><div class="np-title" id="np-title"></div><div class="np-sub" id="np-sub"></div></div>
+          </div>
+          <div class="transport">
+            <button class="ctrl" id="c-prev" aria-label="Previous"></button>
+            <button class="ctrl ctrl-main" id="c-play" aria-label="Play"></button>
+            <button class="ctrl" id="c-next" aria-label="Next"></button>
+          </div>
+          <div class="ctrl-tools">
+            <div class="seg" id="mode-seg" role="radiogroup">
+              <button data-mode="video"></button>
+              <button data-mode="lyrics"></button>
+              <button data-mode="karaoke"></button>
+            </div>
+            <div class="offset">
+              <button class="ctrl sm" id="off-minus" aria-label="-0.5s"></button>
+              <span id="off-val">0.0s</span>
+              <button class="ctrl sm" id="off-plus" aria-label="+0.5s"></button>
+            </div>
+            <button class="btn btn-ghost" id="lyr-btn"></button>
+            <button class="ctrl sm" id="fav-btn" aria-label="Save"></button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <aside class="queue" id="queue">
+      <div class="queue-head">
+        <h3 data-i18n="up_next"></h3>
+        <label class="switch"><input type="checkbox" id="autoplay"><span></span><em data-i18n="autoplay"></em></label>
+      </div>
+      <div id="queue-list" class="queue-list"></div>
+    </aside>
+  </section>
+</main>
+
+<div class="mini" id="mini" hidden>
+  <img id="mini-thumb" alt="">
+  <div class="mini-text" id="mini-open"><div class="mini-title" id="mini-title"></div><div class="mini-line" id="mini-line"></div></div>
+  <button class="ctrl" id="mini-play" aria-label="Play"></button>
+  <button class="ctrl" id="mini-next" aria-label="Next"></button>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true">
+    <div class="modal-head"><h3 id="modal-title"></h3><button class="icon-btn" id="modal-close" aria-label="Close"></button></div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="https://www.youtube.com/iframe_api"></script>
+<script src="/i18n.js"></script>
+<script src="/common.js"></script>
+<script src="/hot.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
