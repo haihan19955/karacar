@@ -348,6 +348,40 @@ body.karaoke .exit-karaoke {
   background: rgba(0, 0, 0, 0.5); transition: opacity .3s;
 }
 body.karaoke.controls-hidden .exit-karaoke { opacity: 0; }
+
+/* On-stage buttons: always reachable in the car, even when the toolbar wraps or is hidden. */
+.stage-fabs { position: absolute; left: 16px; top: 16px; z-index: 6; display: flex; gap: 12px; transition: opacity .3s; }
+.stage.idle .stage-fabs { display: none; }
+body.karaoke.controls-hidden .stage-fabs { opacity: 0; pointer-events: none; }
+.fab {
+  height: 64px; padding: 0 20px; border-radius: 32px; display: flex; align-items: center; gap: 10px;
+  background: rgba(10, 10, 20, 0.72); backdrop-filter: blur(10px); color: #fff; font-weight: 800; font-size: 19px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.fab:active { transform: scale(.96); }
+.fab.on { background: var(--pink); border-color: transparent; }
+.fab.off { opacity: .45; }
+.fab .fv { font-variant-numeric: tabular-nums; color: var(--text-dim); font-weight: 700; }
+.sync-pad {
+  position: absolute; left: 50%; top: 92px; transform: translateX(-50%); z-index: 7; width: min(760px, calc(100% - 32px));
+  background: rgba(12, 12, 22, 0.92); backdrop-filter: blur(14px); border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 24px; padding: 12px 14px; display: grid; gap: 10px; box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
+}
+.sync-pad[hidden] { display: none; }
+.sp-head { display: flex; align-items: center; gap: 14px; font-size: 20px; }
+.sp-val { margin-left: auto; font-size: 28px; font-weight: 850; font-variant-numeric: tabular-nums; }
+.sp-row { display: flex; gap: 10px; }
+@media (max-height: 900px) { .sp-hint { display: none; } }
+.sp-big, .sp-small, .sp-tap { height: 68px; border-radius: 18px; background: var(--surface-2); color: #fff; font-weight: 800; font-size: 20px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.sp-big { flex: 2; }
+.sp-small { flex: 1; font-size: 18px; color: var(--text-dim); }
+.sp-tap { flex: 3; background: var(--pink); }
+.sp-big:active, .sp-small:active, .sp-tap:active { filter: brightness(1.3); transform: scale(.98); }
+.sp-hint { margin: 0; color: var(--text-dim); font-size: 15px; text-align: center; }
+@media (max-width: 760px) {
+  .fab { height: 52px; padding: 0 14px; font-size: 16px; }
+  .sp-big, .sp-small, .sp-tap { height: 60px; font-size: 16px; }
+}
 body.karaoke .stage[data-mode="karaoke"] .lyr-scroll { top: 46%; }
 
 /* Mini player */

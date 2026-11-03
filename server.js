@@ -1,7 +1,8 @@
 // KaraCar — Tesla karaoke server. Zero dependencies, Node 18+.
 // Serves the static app and a small JSON API:
 //   GET  /api/search?q=            YouTube search (innertube, or Data API if YT_API_KEY is set)
-//   GET  /api/lyrics?title=&artist=&channel=&duration=   lyric candidates (Kugou word-level + LRCLIB line-level)
+//   GET  /api/lyrics?title=&artist=&channel=&duration=   lyric candidates (Kugou + NetEase word-level, LRCLIB line-level)
+//   GET  /api/instrumental?title=&channel=&duration=&id=  matching backing-track video, if any
 //   POST /api/room                 create a passenger room  -> {id, key, token, expires}
 //   POST /api/room/:id/token       refresh guest token (car key)
 //   POST /api/room/:id/state       car publishes now-playing + queue (car key)
@@ -216,7 +217,7 @@ export function cleanTitle(rawTitle, channel) {
 }
 
 const KRC_KEY = [64, 71, 97, 119, 94, 50, 116, 71, 81, 54, 49, 45, 206, 210, 110, 105];
-const CREDIT_RE = /^\s*(作词|作曲|编曲|編曲|作詞|制作人|製作人|监制|監製|词|詞|曲|原唱|演唱|歌手|混音|和声|和聲|吉他|贝斯|貝斯|鼓|录音|錄音|出品|发行|發行|op|sp|lyrics?|lyrics by|lyricist|composer|composed by|music by|arranger|arranged by|producer|produced by|written by|vocals?)\s*[:：]/i;
+const CREDIT_RE = /^\s*(lrc\s*制作|合声|合聲|和音|配唱|录音|統籌|统筹|母带|母帶|弦乐|弦樂|人声|人聲|歌词制作|歌詞製作|作词|作曲|编曲|編曲|作詞|制作人|製作人|监制|監製|词|詞|曲|原唱|演唱|歌手|混音|和声|和聲|吉他|贝斯|貝斯|鼓|录音|錄音|出品|发行|發行|op|sp|lyrics?|lyrics by|lyricist|composer|composed by|music by|arranger|arranged by|producer|produced by|written by|vocals?)[^:：]{0,4}\s*[:：]/i;
 
 // Lyric files usually open with a "Song (version) - Artist" header line. Pull it out so it is not sung,
 // and keep it to detect DJ/live/remix versions that would be out of sync with the video.
@@ -308,6 +309,42 @@ async function lrclibCandidates(track, artist) {
   }).filter((c) => c.lines.length >= 4);
 }
 
+// NetEase Cloud Music: lyrics only (never audio). YRC lines look like
+// [start,dur](t,d,0)word(t,d,0)word with absolute ms times.
+const NE_HEADERS = { 'user-agent': UA, referer: 'https://music.163.com/' };
+function parseYrc(text) {
+  const lines = [];
+  for (const raw of String(text).split(/\r?\n/)) {
+    const m = /^\[(\d+),(\d+)\](.*)$/.exec(raw);
+    if (!m) continue;
+    const words = [...m[3].matchAll(/\((\d+),(\d+),\d+\)([^(]*)/g)].map((w) => ({ t: +w[1], d: +w[2], text: w[3] }));
+    const lineText = words.map((x) => x.text).join('');
+    if (!lineText.trim() || CREDIT_RE.test(lineText)) continue;
+    lines.push({ t: +m[1], d: +m[2], text: lineText, words });
+  }
+  return lines;
+}
+
+async function neteaseCandidates(keyword) {
+  const s = await (await fetchWithTimeout('https://music.163.com/api/cloudsearch/pc?' + new URLSearchParams({ s: keyword, type: 1, limit: 5 }), { headers: NE_HEADERS })).json();
+  const songs = (s.result && s.result.songs) || [];
+  const out = await Promise.all(songs.map(async (song) => {
+    try {
+      const l = await (await fetchWithTimeout('https://music.163.com/api/song/lyric/v1?' + new URLSearchParams({ id: song.id, lv: 1, yv: 1, tv: 0, rv: 0, kv: 0 }), { headers: NE_HEADERS })).json();
+      const yrc = l.yrc && l.yrc.lyric ? parseYrc(l.yrc.lyric) : [];
+      const word = yrc.length >= 4;
+      const { lines, header } = splitHeader(word ? yrc : parseLrc((l.lrc && l.lrc.lyric) || ''));
+      if (lines.length < 4) return null;
+      return {
+        source: 'netease', sync: word ? 'word' : 'line', title: song.name,
+        artist: (song.ar || []).map((a) => a.name).join(' / '), version: header || (song.alia || []).join(' '),
+        duration: Math.round((song.dt || 0) / 1000), lines
+      };
+    } catch { return null; }
+  }));
+  return out.filter(Boolean);
+}
+
 const CJK_RE = /[぀-ヿ㐀-鿿가-힯]/;
 // "晴天 Sunny Day" -> "晴天", "周杰倫 Jay Chou" -> "周杰倫"; leaves pure-latin names alone.
 const stripLatin = (s) => {
@@ -319,11 +356,36 @@ const latinOnly = (s) => (s.match(/[A-Za-z][A-Za-z0-9 .'&]*/g) || []).join(' ').
 
 async function lyricVariant(track, art, duration) {
   const keyword = art ? `${art} - ${track}` : track;
-  const [kg, lr] = await Promise.all([
+  const [kg, ne, lr] = await Promise.all([
     kugouCandidates(keyword, duration).catch(() => []),
+    neteaseCandidates(art ? `${art} ${track}` : track).catch(() => []),
     lrclibCandidates(track, art).catch(() => [])
   ]);
-  return [...kg, ...lr];
+  return [...kg, ...ne, ...lr];
+}
+
+// Find a backing-track (no vocals) upload of the same song on YouTube, close in length.
+const INST_RE = /伴奏|伴唱|消音|去人声|去人聲|純音樂|纯音乐|instrumental|karaoke|off\s*vocal|inst\.?\b|カラオケ|オフボーカル|mr\b|노래방/i;
+async function findInstrumental({ title, channel, duration, id }) {
+  const { track, artist } = cleanTitle(title, channel);
+  const base = `${stripLatin(artist)} ${stripLatin(track)}`.trim();
+  const seen = new Set([id]);
+  const picks = [];
+  for (const q of [`${base} 伴奏`, `${base} instrumental karaoke`]) {
+    for (const r of await searchYoutube(q).catch(() => [])) {
+      if (seen.has(r.id)) continue;
+      seen.add(r.id);
+      if (!INST_RE.test(r.title) || /cover|翻唱|live|现场|現場|remix|dj/i.test(r.title)) continue;
+      const name = stripLatin(track).toLowerCase();
+      if (name && !r.title.toLowerCase().includes(name)) continue;
+      const diff = duration && r.duration ? Math.abs(r.duration - duration) : 30;
+      if (diff > 20) continue;
+      picks.push({ id: r.id, title: r.title, duration: r.duration, diff });
+    }
+    if (picks.length) break;
+  }
+  picks.sort((a, b) => a.diff - b.diff);
+  return { alt: picks[0] || null };
 }
 
 async function findLyrics({ title, artist, channel, duration, q }) {
@@ -554,6 +616,16 @@ const server = http.createServer(async (req, res) => {
       if (!args.title && !args.q) return sendJson(res, 400, { error: 'empty' });
       const key = 'l:' + JSON.stringify(args);
       return sendJson(res, 200, await cached(key, 6 * 3600 * 1000, () => findLyrics(args)));
+    }
+    if (p === '/api/instrumental') {
+      if (limited(req, 'search')) return sendJson(res, 429, { error: 'rate_limited' });
+      const sp = url.searchParams;
+      const args = {
+        title: (sp.get('title') || '').trim().slice(0, 200), channel: (sp.get('channel') || '').trim().slice(0, 100),
+        duration: Math.min(Number(sp.get('duration')) || 0, 36000), id: (sp.get('id') || '').slice(0, 20)
+      };
+      if (!args.title) return sendJson(res, 400, { error: 'empty' });
+      return sendJson(res, 200, await cached('i:' + JSON.stringify(args), 6 * 3600 * 1000, () => findInstrumental(args)));
     }
     if (p === '/api/health') return sendJson(res, 200, { ok: true });
     if (p.startsWith('/api/room')) {

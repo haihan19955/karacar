@@ -241,10 +241,17 @@
     else { pendingVideo = id; createPlayer(); }
   }
 
+  // Player time mapped onto the original song's timeline (the backing track may run a little
+  // longer or shorter, so scale by the length ratio).
+  function rawMs() {
+    const s = player.getCurrentTime() || 0;
+    return (S.inst ? s / S.instScale : s) * 1000;
+  }
+
   const clock = { base: 0, at: 0, lastRaw: -1 };
   function nowMs() {
     if (!playerReady || !S.current || !player.getCurrentTime) return 0;
-    const raw = (player.getCurrentTime() || 0) * 1000;
+    const raw = rawMs();
     const now = performance.now();
     if (!S.playing) { clock.base = raw; clock.at = now; clock.lastRaw = raw; return raw; }
     // The iframe only reports time a few times per second; interpolate between reports
@@ -263,7 +270,7 @@
     const st = e.data;
     const wasPlaying = S.playing;
     S.playing = st === 1;
-    if (st === 1) { clock.base = (player.getCurrentTime() || 0) * 1000; clock.at = performance.now(); S.userPaused = false; }
+    if (st === 1) { clock.base = rawMs(); clock.at = performance.now(); S.userPaused = false; }
     if (st === 0) next(true);
     // Tesla pauses video while the car is moving. If the pause wasn't ours, hide the video
     // and resume so the audio and lyrics continue.
@@ -278,6 +285,17 @@
   }
 
   function onPlayerError(e) {
+    if (S.inst) {
+      // Backing track can't be embedded: go back to the original instead of skipping the song.
+      const at = nowMs() / 1000;
+      S.current.alt = null;
+      S.inst = false;
+      lastAutoResume = Date.now();
+      player.loadVideoById({ videoId: S.current.id, startSeconds: at });
+      updateVocalFab();
+      toast(t('no_inst'), 3000);
+      return;
+    }
     const blocked = e.data === 101 || e.data === 150 || e.data === 153;
     toast(t(blocked ? 'embed_blocked' : 'video_error'), 4000);
     setTimeout(() => next(true), 1800);
@@ -290,8 +308,12 @@
     S.current = songMeta(song);
     S.playing = false;
     S.userPaused = false;
+    S.inst = false;
+    S.instScale = 1;
     clock.base = 0; clock.at = performance.now(); clock.lastRaw = -1;
     loadVideo(song.id);
+    findAlt(S.current);
+    updateVocalFab();
     $('#stage').classList.remove('idle');
     $('#stage-backdrop').style.backgroundImage = `url("https://i.ytimg.com/vi/${song.id}/hqdefault.jpg")`;
     updateNowPlaying();
@@ -541,16 +563,77 @@
 
   function updateOffset() {
     const o = (S.lyrics && S.lyrics.offset) || 0;
-    $('#off-val').textContent = (o > 0 ? '+' : '') + (o / 1000).toFixed(1) + 's';
+    const txt = (o > 0 ? '+' : '') + (o / 1000).toFixed(1) + 's';
+    $('#off-val').textContent = txt;
+    $('#sp-val').textContent = txt;
+    $('#sync-fab').innerHTML = icon('sync', 24) + esc(t('lyr_sync')) + (o ? `<span class="fv">${txt}</span>` : '');
   }
   function nudge(ms) {
-    if (!S.lyrics || !S.lyrics.lines) return;
+    if (!S.lyrics || !S.lyrics.lines) { toast(t('lyrics_not_found')); return; }
     S.lyrics.offset = (S.lyrics.offset || 0) + ms;
     idb.set(S.current.id, S.lyrics);
     updateOffset();
   }
   $('#off-minus').addEventListener('click', () => nudge(-500));
   $('#off-plus').addEventListener('click', () => nudge(500));
+
+  // Big-button sync pad on the stage, sized for the car screen.
+  const pad = $('#sync-pad');
+  $('#sync-fab').addEventListener('click', () => { pad.hidden = !pad.hidden; });
+  $('#sp-close').addEventListener('click', () => { pad.hidden = true; });
+  pad.addEventListener('click', (e) => { const b = e.target.closest('[data-n]'); if (b) nudge(+b.dataset.n); });
+  $('#sp-reset').addEventListener('click', () => nudge(-((S.lyrics && S.lyrics.offset) || 0)));
+  // "Tap when the line starts": align the line about to be sung (or the current one) with now.
+  $('#sp-tap').addEventListener('click', () => {
+    if (!S.lyrics || !S.lyrics.lines) return;
+    const lines = S.lyrics.lines;
+    const tm = nowMs() + (S.lyrics.offset || 0);
+    let i = findLine(tm);
+    const nextLine = lines[i + 1];
+    if (i < 0 || (nextLine && nextLine.t - tm < 1500)) i = Math.min(i + 1, lines.length - 1);
+    S.lyrics.offset = Math.round(lines[i].t - nowMs() + 30);
+    idb.set(S.current.id, S.lyrics);
+    updateOffset();
+    toast(t('synced_toast'), 1200);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Original vocals ⇄ backing track
+  // ─────────────────────────────────────────────────────────────────────────
+  async function findAlt(song) {
+    if (song.alt !== undefined) return song.alt;
+    if (!song._altP) {
+      song._altP = api('/api/instrumental?' + new URLSearchParams({ title: song.title, channel: song.channel || '', duration: song.duration || 0, id: song.id }))
+        .then((d) => { song.alt = d.alt; }).catch(() => { song.alt = null; })
+        .then(() => { if (S.current === song) updateVocalFab(); return song.alt; });
+    }
+    return song._altP;
+  }
+  function updateVocalFab() {
+    const b = $('#vocal-fab');
+    const s = S.current;
+    b.innerHTML = icon('mic', 24) + esc(t(S.inst ? 'vocal_off' : 'vocal_on'));
+    b.classList.toggle('on', !!S.inst);
+    b.classList.toggle('off', !!s && s.alt === null);
+  }
+  async function toggleVocal() {
+    const s = S.current;
+    if (!s || !playerReady) return;
+    const alt = await findAlt(s);
+    if (S.current !== s) return;
+    if (!alt) { toast(t('no_inst'), 2500); return; }
+    const at = nowMs();
+    // Swapping videos fires a pause; don't mistake it for the car pausing video while driving.
+    lastAutoResume = Date.now();
+    S.inst = !S.inst;
+    S.instScale = S.inst && alt.duration && s.duration && Math.abs(alt.duration - s.duration) > 2 ? alt.duration / s.duration : 1;
+    const start = S.inst ? at / 1000 * S.instScale : at / 1000;
+    clock.lastRaw = -1;
+    player.loadVideoById({ videoId: S.inst ? alt.id : s.id, startSeconds: Math.max(0, start) });
+    updateVocalFab();
+    toast(t(S.inst ? 'inst_on' : 'inst_off'), 1500);
+  }
+  $('#vocal-fab').addEventListener('click', toggleVocal);
 
   // Animation loop
   let lastUi = 0;
@@ -594,7 +677,7 @@
         return `<div class="cand ${inUse ? 'inuse' : ''}" style="margin-bottom:10px">
           <div class="grow">
             <div class="t">${esc(c.title)} <span style="color:var(--text-dim);font-weight:600">· ${esc(c.artist)}</span></div>
-            <div class="s"><span class="badge ${c.sync}">${esc(t(c.sync === 'word' ? 'lyr_word' : 'lyr_line'))}</span><span>${esc(c.source === 'kugou' ? 'Kugou' : 'LRCLIB')}</span><span>${fmtTime(c.duration)}</span>${diff !== null ? `<span>${esc(t('sec_diff', { d: diff }))}</span>` : ''}</div>
+            <div class="s"><span class="badge ${c.sync}">${esc(t(c.sync === 'word' ? 'lyr_word' : 'lyr_line'))}</span><span>${esc({ kugou: 'Kugou', netease: 'NetEase' }[c.source] || 'LRCLIB')}</span><span>${fmtTime(c.duration)}</span>${diff !== null ? `<span>${esc(t('sec_diff', { d: diff }))}</span>` : ''}</div>
             <div class="pv">${esc(c.lines.slice(0, 3).map((l) => l.text).join(' / '))}</div>
           </div>
           <button class="btn ${inUse ? 'btn-ghost' : 'btn-primary'}" data-use="${i}">${esc(t(inUse ? 'in_use' : 'use_this'))}</button>
@@ -1080,6 +1163,13 @@
     renderModeSeg();
     renderQueue();
     $('#lyr-btn').innerHTML = icon('lyrics', 20) + esc(t('lyrics_source'));
+    $('#sp-close').innerHTML = icon('close', 22);
+    $$('#sync-pad .sp-big').forEach((b) => {
+      const up = +b.dataset.n > 0;
+      b.innerHTML = esc(t(up ? 'lyr_earlier' : 'lyr_later')) + ` <span class="fv">${up ? '+' : '−'}0.5s</span>`;
+    });
+    updateOffset();
+    updateVocalFab();
     if (S.view === 'search') { if (S.lastResults.length) doSearch($('#search-input').value); else renderSearchHint(); }
     if (S.view === 'library') renderLibrary();
     if (S.view === 'hot') renderHot();

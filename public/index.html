@@ -106,6 +106,24 @@
           <p class="muted" data-i18n="nothing_playing_hint"></p>
         </div>
         <button class="exit-karaoke" id="exit-karaoke" aria-label="Exit"></button>
+        <div class="stage-fabs" id="stage-fabs">
+          <button class="fab" id="vocal-fab"></button>
+          <button class="fab" id="sync-fab"></button>
+        </div>
+        <div class="sync-pad" id="sync-pad" hidden>
+          <div class="sp-head"><b data-i18n="lyr_sync"></b><span class="sp-val" id="sp-val">0.0s</span><button class="ctrl sm" id="sp-close" aria-label="Close"></button></div>
+          <div class="sp-row">
+            <button class="sp-big" data-n="500"></button>
+            <button class="sp-small" data-n="100">+0.1</button>
+            <button class="sp-small" data-n="-100">−0.1</button>
+            <button class="sp-big" data-n="-500"></button>
+          </div>
+          <div class="sp-row">
+            <button class="sp-tap" id="sp-tap" data-i18n="sync_tap"></button>
+            <button class="sp-small sp-reset" id="sp-reset" data-i18n="sync_reset"></button>
+          </div>
+          <p class="sp-hint" data-i18n="sync_hint"></p>
+        </div>
       </div>
       <div class="controls" id="controls">
         <div class="seek">
