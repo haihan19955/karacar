@@ -515,6 +515,7 @@
     const lines = S.lyrics.lines;
     const tm = ms + (S.lyrics.offset || 0);
     const i = findLine(tm);
+    if (drag) return; // the user is holding the lyrics; don't scroll under their finger
     if (i !== S.curLine) setCurrentLine(i);
     if (i >= 0) {
       const l = lines[i];
@@ -549,17 +550,68 @@
     }
   }
 
-  // Tap a line to make it the current one (re-sync).
-  $('#lyr-scroll').addEventListener('click', (e) => {
-    const el = e.target.closest('.lyr-line');
-    if (!el || !S.lyrics || !S.lyrics.lines) return;
-    const line = S.lyrics.lines[+el.dataset.i];
-    S.lyrics.offset = Math.round(line.t - nowMs() + 30);
+  function alignTo(i) {
+    const el = S.lineEls[i];
+    S.lyrics.offset = Math.round(S.lyrics.lines[i].t - nowMs() + 30);
     idb.set(S.current.id, S.lyrics);
     el.classList.remove('tapped'); void el.offsetWidth; el.classList.add('tapped');
     updateOffset();
     toast(t('synced_toast'), 1400);
+  }
+
+  // Tap a line to make it the current one (re-sync).
+  let dragJustEnded = 0;
+  $('#lyr-scroll').addEventListener('click', (e) => {
+    if (Date.now() - dragJustEnded < 300) return;
+    const el = e.target.closest('.lyr-line');
+    if (!el || !S.lyrics || !S.lyrics.lines) return;
+    alignTo(+el.dataset.i);
   });
+
+  // Drag the lyrics up/down: the line that ends up on the centre guide is aligned to "now".
+  let drag = null;
+  const lyrScroll = $('#lyr-scroll');
+  const centreLine = (ty) => {
+    let best = 0, bd = Infinity;
+    S.lineEls.forEach((el, k) => { const d = Math.abs(el.offsetTop + el.offsetHeight / 2 + ty); if (d < bd) { bd = d; best = k; } });
+    return best;
+  };
+  lyrScroll.addEventListener('pointerdown', (e) => {
+    if (!S.lyrics || !S.lyrics.lines || !S.lineEls.length || e.button > 0) return;
+    const m = /translateY\((-?[\d.]+)px\)/.exec(lyrScroll.style.transform);
+    drag = { y: e.clientY, ty0: m ? +m[1] : 0, moved: false, aim: -1, id: e.pointerId };
+  });
+  lyrScroll.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dy = e.clientY - drag.y;
+    if (!drag.moved) {
+      if (Math.abs(dy) < 10) return;
+      drag.moved = true;
+      try { lyrScroll.setPointerCapture(e.pointerId); } catch {}
+      $('#lyrics').classList.add('dragging');
+    }
+    const ty = drag.ty0 + dy;
+    lyrScroll.style.transform = `translateY(${ty}px)`;
+    const aim = centreLine(ty);
+    if (aim !== drag.aim) {
+      if (S.lineEls[drag.aim]) S.lineEls[drag.aim].classList.remove('aim');
+      S.lineEls[aim].classList.add('aim');
+      drag.aim = aim;
+    }
+  });
+  const endDrag = (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const d = drag;
+    drag = null;
+    if (!d.moved) return;
+    dragJustEnded = Date.now();
+    $('#lyrics').classList.remove('dragging');
+    if (S.lineEls[d.aim]) S.lineEls[d.aim].classList.remove('aim');
+    if (e.type === 'pointerup' && d.aim >= 0) alignTo(d.aim);
+    S.curLine = -2; // force a re-render on the next frame
+  };
+  lyrScroll.addEventListener('pointerup', endDrag);
+  lyrScroll.addEventListener('pointercancel', endDrag);
 
   function updateOffset() {
     const o = (S.lyrics && S.lyrics.offset) || 0;

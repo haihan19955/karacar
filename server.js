@@ -189,7 +189,8 @@ async function searchYoutube(q) {
 // Lyrics: title cleanup, Kugou KRC (word-level), LRCLIB (line-level)
 // Unified format: { lines: [{ t, d, text, words?: [{ t, d, text }] }] }, all times in ms.
 // ---------------------------------------------------------------------------
-const NOISE_RE = /official|mv|m\/v|lyric|歌詞|歌词|audio|video|hd|4k|live|remaster|karaoke|ktv|動態|动态|伴奏|字幕|cover|翻唱|純享|纯享|flac|無損|无损|版|ver\.?|visuali[sz]er/i;
+// Latin tags need word boundaries: "ver" must not hit "River", "Forever" or "Lover".
+const NOISE_RE = /\b(?:official|mv|m\/v|lyrics?|audio|video|hd|4k|live|remaster(?:ed)?|karaoke|ktv|cover|flac|ver\.?|version|visuali[sz]er)\b|歌詞|歌词|動態|动态|伴奏|字幕|翻唱|純享|纯享|無損|无损|版/i;
 
 export function cleanTitle(rawTitle, channel) {
   let t = String(rawTitle || '');
@@ -388,20 +389,43 @@ async function findInstrumental({ title, channel, duration, id }) {
   return { alt: picks[0] || null };
 }
 
+// Fold the common traditional/simplified pairs seen in song titles so 周杰倫 matches 周杰伦.
+const T2S = Object.fromEntries([...'倫們這個來時說話愛戀聽歡樂與為無風雲夢憶淚離開門間東車長龍鳳飛聲樂國華語會過還邊遠進對後裡見歲盡蘭陳張劉黃楊趙吳孫鄭謝蔣韓馮許鄧蕭葉蘇盧呂魏陸顏賴齊龐']
+  .map((ch, i) => [ch, '伦们这个来时说话爱恋听欢乐与为无风云梦忆泪离开门间东车长龙凤飞声乐国华语会过还边远进对后里见岁尽兰陈张刘黄杨赵吴孙郑谢蒋韩冯许邓萧叶苏卢吕魏陆颜赖齐庞'[i]]));
+const normName = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '').replace(/./gu, (ch) => T2S[ch] || ch);
+const contains = (hay, needle) => { const n = normName(needle); return n.length >= 2 && normName(hay).includes(n); };
+// Dice coefficient over characters (CJK) / bigrams (latin); 1 = same name.
+function similarity(a, b) {
+  a = normName(a); b = normName(b);
+  if (!a || !b) return 0;
+  if (a.includes(b) || b.includes(a)) return 1;
+  const grams = (s) => (CJK_RE.test(s) ? [...s] : Array.from({ length: Math.max(1, s.length - 1) }, (_, i) => s.slice(i, i + 2)));
+  const ga = grams(a), gb = grams(b);
+  const pool = new Map();
+  for (const g of gb) pool.set(g, (pool.get(g) || 0) + 1);
+  let hit = 0;
+  for (const g of ga) if (pool.get(g)) { hit++; pool.set(g, pool.get(g) - 1); }
+  return (2 * hit) / (ga.length + gb.length);
+}
+
 async function findLyrics({ title, artist, channel, duration, q }) {
   const cleaned = cleanTitle(title, channel);
   const track = q ? q : cleaned.track;
   const art = q ? '' : (artist || cleaned.artist);
   // Try the cleaned title first, then progressively looser variants until something matches.
   const variants = [[track, art], [stripLatin(track), stripLatin(art)], [stripLatin(track), latinOnly(art)], [stripLatin(track), '']];
+  // Bilingual titles ("江南 River South") search far better by the CJK name alone, so try that first.
+  if (stripLatin(track) !== track) variants.unshift(variants.splice(1, 1)[0]);
+  const name = stripLatin(track);
   const tried = new Set();
   let found = [];
   for (const [t, a] of variants) {
     const sig = t + '|' + a;
     if (!t || tried.has(sig)) continue;
     tried.add(sig);
-    found = await lyricVariant(t, a, duration);
-    if (found.length) break;
+    found = found.concat(await lyricVariant(t, a, duration));
+    // Stop once something actually carries the song's name, not just any hit.
+    if (found.some((c) => similarity(name, c.title) >= 0.8)) break;
   }
   const seen = new Set();
   const all = found.filter((c) => {
@@ -412,14 +436,18 @@ async function findLyrics({ title, artist, channel, duration, q }) {
   });
   const dur = Number(duration) || 0;
   const videoTitle = String(title || q).toLowerCase();
-  const VERSION_RE = /dj|live|现场|現場|remix|伴奏|翻唱|cover|女声|男声|女版|男版|加速|慢速|0\.\d+x|铃声|片段/i;
+  const VERSION_RE = /dj|live|现场|現場|remix|伴奏|翻唱|cover|女声|男声|女版|男版|加速|慢速|0\.\d+x|铃声|片段|粤语|粵語|国语版|國語版|闽南语|台语版|日语版|日文版|英文版|韩语版|纯音乐|純音樂|钢琴|鋼琴|piano|instrumental|acoustic|伴唱|demo/i;
   // Rank: closest length to the video wins, word-level breaks ties, and DJ/live/remix versions
   // are pushed down unless the video itself is that version.
+  // A wrong song with the right length used to win; now the name has to match too.
   const score = (c) => {
-    const diff = dur && c.duration ? Math.min(Math.abs(c.duration - dur), 60) : 15;
+    const diff = dur && c.duration ? Math.min(Math.abs(c.duration - dur), 40) : 12;
     const tag = VERSION_RE.exec(c.version + ' ' + c.title);
     const versionPenalty = tag && !videoTitle.includes(tag[0].toLowerCase()) ? 40 : 0;
-    return diff * 1.5 + (c.sync === 'word' ? 0 : 8) + versionPenalty;
+    // Compare against the whole video title so "Artist - Song" and bracketed names both count.
+    const nameMiss = 1 - Math.max(similarity(track, c.title), similarity(name, c.title), contains(videoTitle, c.title) ? 1 : 0);
+    const artistMiss = art || channel ? 1 - Math.max(similarity(art, c.artist), contains(videoTitle + ' ' + (channel || ''), c.artist) ? 1 : 0) : 0;
+    return diff * 1.2 + (c.sync === 'word' ? 0 : 6) + versionPenalty + nameMiss * 45 + artistMiss * 18;
   };
   all.forEach((c) => { c.score = Math.round(score(c)); });
   all.sort((a, b) => a.score - b.score);

@@ -269,7 +269,17 @@ body.has-mini .view:not(#view-player) { padding-bottom: 140px; }
 .lyr-line.far { opacity: 0; }
 .stage[data-mode="karaoke"] .lyr-line:not(.current):not(.next) { opacity: 0; }
 .stage[data-mode="karaoke"] .lyr-line.next { font-size: calc(var(--ls) * 0.6); color: rgba(255, 255, 255, 0.55); }
+.lyr-line { touch-action: none; user-select: none; -webkit-user-select: none; }
 .lyr-line.tapped { animation: tapped .6s; }
+/* Dragging to align: show every line, follow the finger, mark the centre guide. */
+.lyrics.dragging .lyr-scroll { transition: none; }
+.lyrics.dragging .lyr-line { opacity: 1 !important; }
+.lyrics.dragging::after {
+  content: ''; position: absolute; left: 3%; right: 3%; top: 50%; height: 0; border-top: 2px dashed var(--pink);
+  pointer-events: none; z-index: 3;
+}
+body.karaoke .lyrics.dragging::after { top: 46%; }
+.lyr-line.aim { color: #fff; background: rgba(236, 72, 153, 0.18); border-radius: 14px; }
 @keyframes tapped { 0% { background: rgba(139, 92, 246, 0.35); } 100% { background: transparent; } }
 .lyr-line .w { white-space: pre-wrap; }
 .lyr-line.current .w {
